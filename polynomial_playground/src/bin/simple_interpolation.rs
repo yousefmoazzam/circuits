@@ -6,7 +6,7 @@ use ark_poly::{
 
 #[derive(MontConfig)]
 #[modulus = "17"]
-#[generator = "1"]
+#[generator = "3"]
 pub struct FqConfig;
 pub type Fq = Fp64<MontBackend<FqConfig, 1>>;
 
