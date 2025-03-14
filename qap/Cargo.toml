@@ -1,0 +1,8 @@
+[package]
+name = "qap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff = "0.5"
+ark-poly = "0.5"
