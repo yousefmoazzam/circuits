@@ -319,6 +319,7 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-poly",
+ "ark-std",
 ]
 
 [[package]]

@@ -1,9 +1,11 @@
 use ark_bn254::{Bn254, Fr, G1Projective, G2Projective};
 use ark_ec::{pairing::Pairing, PrimeGroup};
+use ark_ff::{Field, UniformRand};
 use ark_poly::{
     univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain,
     Polynomial,
 };
+use ark_std::test_rng;
 
 /// Taking a QAP derived from an arithmetic circuit `z = x^4 - 5y^2x^2` in the form of an R1CS with
 /// the following constraints:
@@ -136,27 +138,18 @@ fn main() {
     );
 
     // Define SRS for evaluating interpolated polynomials originating from `L` and `R` matrices
-    let tau: u32 = 88;
+    let mut rng = test_rng();
+    let tau = Fr::rand(&mut rng);
     let g1 = G1Projective::generator();
     let g2 = G2Projective::generator();
-    let srs_l_and_o = [
-        g1,
-        g1 * Fr::from(tau),
-        g1 * Fr::from(tau.pow(2)),
-        g1 * Fr::from(tau.pow(3)),
-    ];
-    let srs_r = [
-        g2,
-        g2 * Fr::from(tau),
-        g2 * Fr::from(tau.pow(2)),
-        g2 * Fr::from(tau.pow(3)),
-    ];
+    let srs_l_and_o = [g1, g1 * tau, g1 * tau.pow([2]), g1 * tau.pow([3])];
+    let srs_r = [g2, g2 * tau, g2 * tau.pow([2]), g2 * tau.pow([3])];
 
     // Define SRS for `h(x)t(x)` term
     let srs_ht_product = [
-        g1 * t_poly.evaluate(&Fr::from(tau)),
-        g1 * Fr::from(tau) * t_poly.evaluate(&Fr::from(tau)),
-        g1 * Fr::from(tau.pow(2)) * t_poly.evaluate(&Fr::from(tau)),
+        g1 * t_poly.evaluate(&tau),
+        g1 * tau * t_poly.evaluate(&tau),
+        g1 * tau.pow([2]) * t_poly.evaluate(&tau),
     ];
 
     // Evaluate polynomials on the SRS's, introducing encryption of the values via combining
