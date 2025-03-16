@@ -7,6 +7,8 @@ use ark_poly::{
 };
 use ark_std::test_rng;
 
+/// Zero-knowledge proof using the groth16 protocol
+///
 /// Taking a QAP derived from an arithmetic circuit `z = x^4 - 5y^2x^2` in the form of an R1CS with
 /// the following constraints:
 /// - v_1 = x * x
@@ -23,6 +25,9 @@ use ark_std::test_rng;
 /// - supporting public inputs by treating the public and private parts of the witness differently,
 /// but also enforcing that values in `phis` (which now has public and private portions) can't be
 /// used to satisfy the QAP eqn without satisfying the constraints
+/// - guarding against a prover simply guessing a valid witness, by adding in "salt" values which
+/// would also need to be guessed correctly in order for a prover to guess a correct witness (which
+/// is incredibly unlikely to happen)
 fn main() {
     const NO_OF_POLY_COEFFS: usize = 4;
     let small_domain = GeneralEvaluationDomain::<Fr>::new(NO_OF_POLY_COEFFS).unwrap();
@@ -160,10 +165,12 @@ fn main() {
     let alpha = Fr::rand(&mut rng);
     let alpha_1 = g1 * alpha;
     let beta = Fr::rand(&mut rng);
+    let beta_1 = g1 * beta;
     let beta_2 = g2 * beta;
     let gamma = Fr::rand(&mut rng);
     let gamma_2 = g2 * gamma;
     let delta = Fr::rand(&mut rng);
+    let delta_1 = g1 * delta;
     let delta_2 = g2 * delta;
     let phis = std::iter::zip(
         l_columns_polys,
@@ -185,6 +192,11 @@ fn main() {
     ]
     .map(|val| val * delta.inverse().unwrap());
 
+    // Define "salt" values which will be used to protect against a prover simply guessing a valid
+    // witness
+    let r_salt = Fr::rand(&mut rng);
+    let s_salt = Fr::rand(&mut rng);
+
     // Evaluate polynomials on the SRS's, introducing encryption of the values via combining
     // generators of elliptic curve groups with themselves some number of times
     let eval_l = std::iter::zip(l_linear_combination_poly.coeffs(), srs_l)
@@ -192,6 +204,10 @@ fn main() {
         .reduce(|acc, val| acc + val)
         .unwrap();
     let eval_r = std::iter::zip(r_linear_combination_poly.coeffs(), srs_r)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let eval_r_g1 = std::iter::zip(r_linear_combination_poly.coeffs(), srs_l)
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
@@ -206,11 +222,15 @@ fn main() {
         .unwrap();
 
     // Verify that both sides of QAP eqn are equal
+    let a_1 = alpha_1 + eval_l + delta_1 * r_salt;
+    let b_1 = beta_1 + eval_r_g1 + delta_1 * s_salt;
+    let b_2 = beta_2 + eval_r + delta_2 * s_salt;
+    let c_1 = eval_o + eval_ht + a_1 * s_salt + b_1 * r_salt - delta_1 * r_salt * s_salt;
     assert_eq!(
-        Bn254::pairing(alpha_1 + eval_l, beta_2 + eval_r),
+        Bn254::pairing(a_1, b_2),
         Bn254::pairing(alpha_1, beta_2)
             + Bn254::pairing(eval_pub_input, gamma_2)
-            + Bn254::pairing(eval_o + eval_ht, delta_2)
+            + Bn254::pairing(c_1, delta_2)
     );
 }
 
