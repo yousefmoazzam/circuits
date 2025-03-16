@@ -156,8 +156,8 @@ fn main() {
     let tau = Fr::rand(&mut rng);
     let g1 = G1Projective::generator();
     let g2 = G2Projective::generator();
-    let srs_l = [g1, g1 * tau, g1 * tau.pow([2]), g1 * tau.pow([3])];
-    let srs_r = [g2, g2 * tau, g2 * tau.pow([2]), g2 * tau.pow([3])];
+    let srs_g1 = [g1, g1 * tau, g1 * tau.pow([2]), g1 * tau.pow([3])];
+    let srs_g2 = [g2, g2 * tau, g2 * tau.pow([2]), g2 * tau.pow([3])];
 
     // Define values used for combining interpolated column polynomials of all three matrices `L`,
     // `R`, `O` (required for enforcing that QAP eqn can only be satisfied if a valid witness is
@@ -199,15 +199,15 @@ fn main() {
 
     // Evaluate polynomials on the SRS's, introducing encryption of the values via combining
     // generators of elliptic curve groups with themselves some number of times
-    let eval_l = std::iter::zip(l_linear_combination_poly.coeffs(), srs_l)
+    let eval_l = std::iter::zip(l_linear_combination_poly.coeffs(), srs_g1)
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let eval_r = std::iter::zip(r_linear_combination_poly.coeffs(), srs_r)
+    let eval_r_g2 = std::iter::zip(r_linear_combination_poly.coeffs(), srs_g2)
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let eval_r_g1 = std::iter::zip(r_linear_combination_poly.coeffs(), srs_l)
+    let eval_r_g1 = std::iter::zip(r_linear_combination_poly.coeffs(), srs_g1)
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
@@ -224,7 +224,7 @@ fn main() {
     // Verify that both sides of QAP eqn are equal
     let a_1 = alpha_1 + eval_l + delta_1 * r_salt;
     let b_1 = beta_1 + eval_r_g1 + delta_1 * s_salt;
-    let b_2 = beta_2 + eval_r + delta_2 * s_salt;
+    let b_2 = beta_2 + eval_r_g2 + delta_2 * s_salt;
     let c_1 = eval_o + eval_ht + a_1 * s_salt + b_1 * r_salt - delta_1 * r_salt * s_salt;
     assert_eq!(
         Bn254::pairing(a_1, b_2),
