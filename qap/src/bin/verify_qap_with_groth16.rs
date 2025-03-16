@@ -20,6 +20,9 @@ use ark_std::test_rng;
 /// - enforcing that QAP eqn can be satisfied only when constraints are satisfied (protecting
 /// against prover providing two elliptic curve group elements of `G1` and one elliptic curve group
 /// element of `G2` that satisfy the QAP but wasn't necessarily derived from having a valid witness)
+/// - supporting public inputs by treating the public and private parts of the witness differently,
+/// but also enforcing that values in `phis` (which now has public and private portions) can't be
+/// used to satisfy the QAP eqn without satisfying the constraints
 fn main() {
     const NO_OF_POLY_COEFFS: usize = 4;
     let small_domain = GeneralEvaluationDomain::<Fr>::new(NO_OF_POLY_COEFFS).unwrap();
@@ -57,6 +60,7 @@ fn main() {
     let v3 = Fr::from(-5) * y * y;
     let z = v3 * v1 + v2;
     let witness = [Fr::from(1), z, x, y, v1, v2, v3];
+    const NO_OF_PUB_INPUTS: usize = 1;
 
     // Sanity check that the matrices `L`, `R`, `O`, and the witness vector are correctly defined
     let l_mult_witness = (0..=3)
@@ -150,13 +154,6 @@ fn main() {
     let srs_l = [g1, g1 * tau, g1 * tau.pow([2]), g1 * tau.pow([3])];
     let srs_r = [g2, g2 * tau, g2 * tau.pow([2]), g2 * tau.pow([3])];
 
-    // Define SRS for `h(x)t(x)` term
-    let srs_ht_product = [
-        g1 * t_poly.evaluate(&tau),
-        g1 * tau * t_poly.evaluate(&tau),
-        g1 * tau.pow([2]) * t_poly.evaluate(&tau),
-    ];
-
     // Define values used for combining interpolated column polynomials of all three matrices `L`,
     // `R`, `O` (required for enforcing that QAP eqn can only be satisfied if a valid witness is
     // provided)
@@ -164,14 +161,29 @@ fn main() {
     let alpha_1 = g1 * alpha;
     let beta = Fr::rand(&mut rng);
     let beta_2 = g2 * beta;
+    let gamma = Fr::rand(&mut rng);
+    let gamma_2 = g2 * gamma;
+    let delta = Fr::rand(&mut rng);
+    let delta_2 = g2 * delta;
     let phis = std::iter::zip(
         l_columns_polys,
         std::iter::zip(r_columns_polys, o_columns_polys),
     )
-    .map(|(l_poly, (r_poly, o_poly))| {
+    .enumerate()
+    .map(|(idx, (l_poly, (r_poly, o_poly)))| {
+        let divisor = if idx < NO_OF_PUB_INPUTS { gamma } else { delta };
         g1 * (alpha * r_poly.evaluate(&tau) + beta * l_poly.evaluate(&tau) + o_poly.evaluate(&tau))
+            * divisor.inverse().unwrap()
     })
     .collect::<Vec<_>>();
+
+    // Define SRS for `h(x)t(x)` term
+    let srs_ht_product = [
+        g1 * t_poly.evaluate(&tau),
+        g1 * tau * t_poly.evaluate(&tau),
+        g1 * tau.pow([2]) * t_poly.evaluate(&tau),
+    ]
+    .map(|val| val * delta.inverse().unwrap());
 
     // Evaluate polynomials on the SRS's, introducing encryption of the values via combining
     // generators of elliptic curve groups with themselves some number of times
@@ -183,8 +195,9 @@ fn main() {
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let eval_o = std::iter::zip(witness, phis)
-        .map(|(coeff, term)| term * coeff)
+    let eval_pub_input = phis[0] * witness[0];
+    let eval_o = std::iter::zip(&witness[NO_OF_PUB_INPUTS..], &phis[NO_OF_PUB_INPUTS..])
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
     let eval_ht = std::iter::zip(h_poly.coeffs(), srs_ht_product)
@@ -195,7 +208,9 @@ fn main() {
     // Verify that both sides of QAP eqn are equal
     assert_eq!(
         Bn254::pairing(alpha_1 + eval_l, beta_2 + eval_r),
-        Bn254::pairing(alpha_1, beta_2) + Bn254::pairing(eval_o + eval_ht, g2)
+        Bn254::pairing(alpha_1, beta_2)
+            + Bn254::pairing(eval_pub_input, gamma_2)
+            + Bn254::pairing(eval_o + eval_ht, delta_2)
     );
 }
 
