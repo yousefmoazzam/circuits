@@ -6,6 +6,7 @@ use ark_poly::{
     Polynomial,
 };
 use ark_std::test_rng;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 /// For the eqn `2x^2 - x^2y^2 + 3 = 25` and a proof of having a solution `x = 2, y = 3`:
 /// - the preparation phase
@@ -150,9 +151,9 @@ fn main() {
     let qm_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&qm));
     let qc_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&qc));
     let qo_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&qo));
-    let _sigma_a_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&sigma_a));
-    let _sigma_b_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&sigma_b));
-    let _sigma_c_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&sigma_c));
+    let sigma_a_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&sigma_a));
+    let sigma_b_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&sigma_b));
+    let sigma_c_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&sigma_c));
 
     // Define the polynomial which has roots at the eight 8th roots of unity, to be used as a
     // divisor to check if the polynomial being divided also has roots at all the 8th roots of
@@ -231,7 +232,7 @@ fn main() {
     // unity should represent a single gate equation. As all gate equations were set to zero, this
     // means that evaluating the single gate poylnomial at any 8th root of unity should produce
     // zero.
-    for elem in domain {
+    for elem in domain.clone() {
         assert_eq!(gate_poly.evaluate(&elem), Fr::from(0));
     }
     assert_eq!(
@@ -253,7 +254,60 @@ fn main() {
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let _round_one = [a_poly_commitment, b_poly_commitment, c_poly_commitment];
+    let round_one = [a_poly_commitment, b_poly_commitment, c_poly_commitment];
+
+    // Prover: round two
+    //
+    // Hash the polynomial commitments from round one in the context of applying the Fiat-Shamir
+    // heuristic to make the KZG polynomial commitment scheme be non-interactive
+    let mut hasher = DefaultHasher::new();
+    (round_one[0] + round_one[1] + round_one[2] + G1Projective::rand(&mut rng)).hash(&mut hasher);
+    let beta = hasher.finish();
+    let beta_poly = DensePolynomial::from_coefficients_slice(&[Fr::from(beta)]);
+    (round_one[0] + round_one[1] + round_one[2] + G1Projective::rand(&mut rng)).hash(&mut hasher);
+    let gamma = hasher.finish();
+    let gamma_poly = DensePolynomial::from_coefficients_slice(&[Fr::from(gamma)]);
+
+    // Define polynomials to go in numerator and denominator of expression for "accumulator"
+    //
+    // This enforces the values in the circuit which are common to a pair of wires ("copy
+    // constraints") (for example, `a_2 = o_1`), to ensure that the various gates are connected to
+    // each other as the original circuit describes.
+    let a_indices_mapping = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&domain));
+    let b_indices_mapping = DensePolynomial::from_coefficients_slice(
+        &small_domain.ifft(&domain.iter().map(|elem| k1 * elem).collect::<Vec<_>>()),
+    );
+    let c_indices_mapping = DensePolynomial::from_coefficients_slice(
+        &small_domain.ifft(&domain.iter().map(|elem| k2 * elem).collect::<Vec<_>>()),
+    );
+    let f_poly =
+        (gamma_poly.clone() + a_indices_mapping.clone() + a_poly.clone() * beta_poly.clone())
+            * (gamma_poly.clone() + b_indices_mapping.clone() + b_poly.clone() * beta_poly.clone())
+            * (gamma_poly.clone() + c_indices_mapping + c_poly.clone() * beta_poly.clone());
+    let g_poly = (gamma_poly.clone() + sigma_a_poly.clone() + a_poly * beta_poly.clone())
+        * (gamma_poly.clone() + sigma_b_poly.clone() + b_poly * beta_poly.clone())
+        * (gamma_poly + sigma_c_poly + c_poly * beta_poly);
+    let mut acc_evals = vec![Fr::from(1)];
+    for (idx, elem) in domain.iter().enumerate() {
+        acc_evals.push(acc_evals[idx] * (f_poly.evaluate(elem) / g_poly.evaluate(elem)));
+    }
+
+    // Sanity check that the final accumulator value is as expected
+    assert_eq!(acc_evals.pop().unwrap(), Fr::from(1));
+    let acc_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&acc_evals));
+
+    // Define polynomial for enforcing permutations
+    let blinding_poly_z =
+        DensePolynomial::from_coefficients_slice(&small_domain.ifft(&blinding_elements[6..]));
+    let z_poly = blinding_poly_z.mul_by_vanishing_poly(small_domain) + acc_poly;
+
+    // Sanity check that the permutation polynomial has correct start and end points
+    assert_eq!(z_poly.evaluate(&domain[0]), Fr::from(1));
+    assert_eq!(z_poly.evaluate(&domain[domain.len() - 1]), Fr::from(1));
+    let _z_poly_commitment = std::iter::zip(z_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
 }
 
 #[cfg(test)]
