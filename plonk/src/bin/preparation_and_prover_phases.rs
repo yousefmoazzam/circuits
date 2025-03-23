@@ -211,11 +211,11 @@ fn main() {
 
     // Define polynomial that puts together wire polynomials and selector polynomials, to represent
     // all gates in the cirucit with one polynomial
-    let gate_poly = ql_poly * a_poly.clone()
-        + qr_poly * b_poly.clone()
-        + qm_poly * a_poly.clone() * b_poly.clone()
-        + qc_poly
-        + qo_poly * c_poly.clone();
+    let gate_poly = ql_poly.clone() * a_poly.clone()
+        + qr_poly.clone() * b_poly.clone()
+        + qm_poly.clone() * a_poly.clone() * b_poly.clone()
+        + qc_poly.clone()
+        + qo_poly.clone() * c_poly.clone();
 
     // Sanity check that the gate polynomial has roots at all the 8th roots of unity.
     //
@@ -285,7 +285,7 @@ fn main() {
         * (gamma_poly.clone() + c_indices_mapping * beta_poly.clone() + c_poly.clone());
     let g_poly = (gamma_poly.clone() + sigma_a_poly.clone() * beta_poly.clone() + a_poly.clone())
         * (gamma_poly.clone() + sigma_b_poly.clone() * beta_poly.clone() + b_poly.clone())
-        * (gamma_poly + sigma_c_poly * beta_poly + c_poly.clone());
+        * (gamma_poly.clone() + sigma_c_poly.clone() * beta_poly.clone() + c_poly.clone());
     let mut acc_evals = vec![Fr::from(1)];
     for (idx, elem) in domain.iter().enumerate() {
         acc_evals.push(acc_evals[idx] * (f_poly.evaluate(elem) / g_poly.evaluate(elem)));
@@ -343,8 +343,8 @@ fn main() {
         t1_poly.divide_by_vanishing_poly(small_domain).1,
         DensePolynomial::from_coefficients_slice(&[Fr::from(0)])
     );
-    let t2_poly = (z_poly - DensePolynomial::from_coefficients_slice(&[Fr::from(1)]))
-        * l1_poly
+    let t2_poly = (z_poly.clone() - DensePolynomial::from_coefficients_slice(&[Fr::from(1)]))
+        * l1_poly.clone()
         * alpha_poly.clone()
         * alpha_poly;
     assert_eq!(
@@ -358,7 +358,7 @@ fn main() {
         t_poly.divide_by_vanishing_poly(small_domain).1,
         DensePolynomial::from_coefficients_slice(&[Fr::from(0)])
     );
-    for elem in domain {
+    for elem in domain.clone() {
         assert_eq!(t_poly.evaluate(&elem), Fr::from(0));
     }
     let t_poly = t_poly.divide_by_vanishing_poly(small_domain).0;
@@ -448,6 +448,125 @@ fn main() {
         sigma_b_zeta,
         z_omega_shifted_zeta,
     ];
+
+    // Prover phase: round five
+    //
+    // Hash polynomial commitments from rounds one, two, three, and a random elliptic curve group
+    // element
+    //
+    // TODO: This should be using the values from round four, but as they were the output of
+    // evaluating polynomials rather than using the "inner-product evaluation between polynomial
+    // coefficients and powers of tau in an SRS", they're elements of the scalar field associated
+    // with the elliptic curve group rather than elliptic curve group elements. This means that
+    // they cannot be added together as-is, due to no addition oeprator beig defined between:
+    // - elements of the scalar field associated with the elliptic curve group
+    // - elements of an elliptic curve group
+    //
+    // so further investigation is needed.
+    (round_one[0]
+        + round_one[1]
+        + round_one[2]
+        + z_poly_commitment
+        + round_three[0]
+        + round_three[1]
+        + round_three[2]
+        + G1Projective::rand(&mut rng))
+    .hash(&mut hasher);
+    let v = hasher.finish();
+
+    // Define "linearisation polynomial"
+    let gate_poly_part = ql_poly * a_zeta
+        + qr_poly * b_zeta
+        + qo_poly * c_zeta
+        + qm_poly * a_zeta * b_zeta
+        + qc_poly;
+
+    let f_poly_part = z_poly.clone()
+        * Fr::from(alpha)
+        * ((a_zeta + Fr::from(beta) * zeta + Fr::from(gamma))
+            * (b_zeta + Fr::from(beta) * zeta * k1 + Fr::from(gamma))
+            * (c_zeta + Fr::from(beta) * zeta * k2 + Fr::from(gamma)));
+
+    let a_zeta_poly = DensePolynomial::from_coefficients_slice(&[a_zeta]);
+    let b_zeta_poly = DensePolynomial::from_coefficients_slice(&[b_zeta]);
+    let c_zeta_poly = DensePolynomial::from_coefficients_slice(&[c_zeta]);
+
+    let g_poly_part =
+        ((a_zeta_poly.clone() + beta_poly.clone() * sigma_a_zeta + gamma_poly.clone())
+            * (b_zeta_poly.clone() + beta_poly.clone() * sigma_b_zeta + gamma_poly.clone())
+            * (c_zeta_poly.clone() + beta_poly * sigma_c_poly + gamma_poly))
+            * z_omega_shifted_zeta
+            * Fr::from(alpha);
+
+    let l1_poly_part = (z_poly.clone() - DensePolynomial::from_coefficients_slice(&[Fr::from(1)]))
+        * l1_poly.evaluate(&zeta)
+        * Fr::from(alpha).pow([2]);
+    let quotient_poly_split_part = (t_low_poly
+        + t_mid_poly * zeta.pow([NO_OF_POLY_COEFFS as u64])
+        + t_high_poly * zeta.pow([2 * NO_OF_POLY_COEFFS as u64]))
+        * small_domain.evaluate_vanishing_polynomial(zeta);
+    let r_poly =
+        gate_poly_part + f_poly_part - g_poly_part + l1_poly_part - quotient_poly_split_part;
+
+    // Define "opening proof polynomials"
+    let w_zeta_poly_divisor = DensePolynomial::from_coefficients_slice(&[-zeta, Fr::from(1)]);
+    let w_zeta_poly_dividend = r_poly
+        + (a_poly - a_zeta_poly) * Fr::from(v)
+        + (b_poly - b_zeta_poly) * Fr::from(v).pow([2])
+        + (c_poly - c_zeta_poly) * Fr::from(v).pow([3])
+        + (sigma_a_poly - DensePolynomial::from_coefficients_slice(&[sigma_a_zeta]))
+            * Fr::from(v).pow([4])
+        + (sigma_b_poly - DensePolynomial::from_coefficients_slice(&[sigma_b_zeta]))
+            * Fr::from(v).pow([5]);
+    let w_zeta_poly = w_zeta_poly_dividend.clone() / w_zeta_poly_divisor.clone();
+    // Sanity check that `w_zeta_poly` has root at `zeta`
+    assert_eq!(
+        (w_zeta_poly.clone() * w_zeta_poly_divisor.clone()).evaluate(&zeta),
+        Fr::from(0)
+    );
+    assert_eq!(
+        w_zeta_poly.clone() * w_zeta_poly_divisor,
+        w_zeta_poly_dividend
+    );
+
+    let w_omega_zeta_poly_divisor =
+        DensePolynomial::from_coefficients_slice(&[-(zeta * domain[1]), Fr::from(1)]);
+    let w_omega_zeta_poly_dividend =
+        z_poly.clone() - DensePolynomial::from_coefficients_slice(&[z_omega_shifted_zeta]);
+    let w_omega_zeta_poly = w_omega_zeta_poly_dividend.clone() / w_omega_zeta_poly_divisor.clone();
+    // Sanity check that `w_omega_zeta_poly` has root at `zeta * omega`
+    assert_eq!(
+        (w_omega_zeta_poly.clone() * w_omega_zeta_poly_divisor.clone())
+            .evaluate(&(zeta * domain[1])),
+        Fr::from(0)
+    );
+    assert_eq!(
+        w_omega_zeta_poly.clone() * w_omega_zeta_poly_divisor,
+        w_omega_zeta_poly_dividend
+    );
+
+    // Create commitments to the two opening polynomials
+    let w_zeta_poly_commitment = std::iter::zip(w_zeta_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let w_omega_zeta_poly_commitment = std::iter::zip(w_omega_zeta_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let _round_five = [w_zeta_poly_commitment, w_omega_zeta_poly_commitment];
+    (round_one[0]
+        + round_one[1]
+        + round_one[2]
+        + z_poly_commitment
+        + round_three[0]
+        + round_three[1]
+        + round_three[2]
+        + _round_five[0]
+        + _round_five[1]
+        + G1Projective::rand(&mut rng))
+    .hash(&mut hasher);
+    let _u = hasher.finish();
 }
 
 #[cfg(test)]
