@@ -194,12 +194,12 @@ fn main() {
     ];
 
     // Define "blinding" polynomials
-    let blinding_poly_a =
-        DensePolynomial::from_coefficients_slice(&small_domain.ifft(&blinding_elements[..2]));
-    let blinding_poly_b =
-        DensePolynomial::from_coefficients_slice(&small_domain.ifft(&blinding_elements[2..4]));
-    let blinding_poly_c =
-        DensePolynomial::from_coefficients_slice(&small_domain.ifft(&blinding_elements[4..6]));
+    let blinding_poly_a = DensePolynomial::from_coefficients_slice(&blinding_elements[..2]);
+    assert_eq!(blinding_poly_a.degree(), 1);
+    let blinding_poly_b = DensePolynomial::from_coefficients_slice(&blinding_elements[2..4]);
+    assert_eq!(blinding_poly_b.degree(), 1);
+    let blinding_poly_c = DensePolynomial::from_coefficients_slice(&blinding_elements[4..6]);
+    assert_eq!(blinding_poly_c.degree(), 1);
 
     // Define polynomials that interpolated the sets of wire values
     let a_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&a))
@@ -297,8 +297,8 @@ fn main() {
     let acc_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&acc_evals));
 
     // Define polynomial for enforcing permutations
-    let blinding_poly_z =
-        DensePolynomial::from_coefficients_slice(&small_domain.ifft(&blinding_elements[6..]));
+    let blinding_poly_z = DensePolynomial::from_coefficients_slice(&blinding_elements[6..]);
+    assert_eq!(blinding_poly_z.degree(), 2);
     let z_poly = blinding_poly_z.mul_by_vanishing_poly(small_domain) + acc_poly;
 
     // Sanity check that the permutation polynomial has correct start and end points
@@ -378,11 +378,7 @@ fn main() {
     x_2n_poly_coeffs[2 * NO_OF_POLY_COEFFS] = Fr::from(1);
     let x_2n_poly = DensePolynomial::from_coefficients_slice(&x_2n_poly_coeffs);
     // Sanity checks that the quotient polynomial has been split correctly
-    //
-    // TODO: There's a constraint on the degree of the low, mid, and high polynomials which the
-    // quotient polynomial is split into that isn't being satisfied for some reason, this needs
-    // further investigation
-    //assert_eq!(t_poly.degree(), 3 * NO_OF_POLY_COEFFS + 5);
+    assert_eq!(t_poly.degree(), 3 * NO_OF_POLY_COEFFS + 5);
     assert_eq!(
         t_poly,
         t_low_poly.clone()
