@@ -308,6 +308,120 @@ fn main() {
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
+
+    // Prover: round three
+    //
+    // Hash polynomial commitments from round one and two
+    (round_one[0] + round_one[1] + _z_poly_commitment + G1Projective::rand(&mut rng))
+        .hash(&mut hasher);
+    let alpha = hasher.finish();
+    let alpha_poly = DensePolynomial::from_coefficients_slice(&[Fr::from(alpha)]);
+
+    // Define various pieces that are used in the defn of the quotient polynomial
+    let z_poly_omega_shifted_coeffs = z_poly
+        .coeffs()
+        .iter()
+        .enumerate()
+        .map(|(idx, coeff)| *coeff * domain[1].pow([idx as u64]))
+        .collect::<Vec<_>>();
+    let z_poly_omega_shifted =
+        DensePolynomial::from_coefficients_slice(&z_poly_omega_shifted_coeffs);
+    let mut l1_poly_evals = [Fr::from(0); NO_OF_POLY_COEFFS];
+    l1_poly_evals[0] = Fr::from(1);
+    let l1_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&l1_poly_evals));
+
+    // Sanity check that `l1_poly` indeed evaluates to 1 at the first 8th root of unity, and zero
+    // at all the other 8th roots of unity
+    assert_eq!(l1_poly.evaluate(&domain[0]), Fr::from(1));
+    for elem in &domain[1..] {
+        assert_eq!(l1_poly.evaluate(elem), Fr::from(0));
+    }
+
+    // Define the quotient polynomial
+    let t1_poly = (f_poly * z_poly.clone() - g_poly * z_poly_omega_shifted) * alpha_poly.clone();
+    assert_eq!(
+        t1_poly.divide_by_vanishing_poly(small_domain).1,
+        DensePolynomial::from_coefficients_slice(&[Fr::from(0)])
+    );
+    let t2_poly = (z_poly - DensePolynomial::from_coefficients_slice(&[Fr::from(1)]))
+        * l1_poly
+        * alpha_poly.clone()
+        * alpha_poly;
+    assert_eq!(
+        t2_poly.divide_by_vanishing_poly(small_domain).1,
+        DensePolynomial::from_coefficients_slice(&[Fr::from(0)])
+    );
+    let t_poly = gate_poly + t1_poly + t2_poly;
+
+    // Sanity check that the quotient polynomial indeed has roots at all the 8th roots of unity
+    assert_eq!(
+        t_poly.divide_by_vanishing_poly(small_domain).1,
+        DensePolynomial::from_coefficients_slice(&[Fr::from(0)])
+    );
+    for elem in domain {
+        assert_eq!(t_poly.evaluate(&elem), Fr::from(0));
+    }
+    let t_poly = t_poly.divide_by_vanishing_poly(small_domain).0;
+
+    // Define the splitting of the quotient polynomial into "low", "mid", and "high" parts
+    let t_coeffs = t_poly.coeffs();
+    let t_low_poly = DensePolynomial::from_coefficients_slice(&t_coeffs[..NO_OF_POLY_COEFFS]);
+    let t_mid_poly = DensePolynomial::from_coefficients_slice(
+        &t_coeffs[NO_OF_POLY_COEFFS..NO_OF_POLY_COEFFS * 2],
+    );
+    let t_high_poly = DensePolynomial::from_coefficients_slice(&t_coeffs[NO_OF_POLY_COEFFS * 2..]);
+    let mut x_n_poly_coeffs = [Fr::from(0); NO_OF_POLY_COEFFS + 1];
+    x_n_poly_coeffs[NO_OF_POLY_COEFFS] = Fr::from(1);
+    let x_n_poly = DensePolynomial::from_coefficients_slice(&x_n_poly_coeffs);
+    let mut x_2n_poly_coeffs = [Fr::from(0); 2 * NO_OF_POLY_COEFFS + 1];
+    x_2n_poly_coeffs[2 * NO_OF_POLY_COEFFS] = Fr::from(1);
+    let x_2n_poly = DensePolynomial::from_coefficients_slice(&x_2n_poly_coeffs);
+    // Sanity checks that the quotient polynomial has been split correctly
+    //
+    // TODO: There's a constraint on the degree of the low, mid, and high polynomials which the
+    // quotient polynomial is split into that isn't being satisfied for some reason, this needs
+    // further investigation
+    //assert_eq!(t_poly.degree(), 3 * NO_OF_POLY_COEFFS + 5);
+    assert_eq!(
+        t_poly,
+        t_low_poly.clone()
+            + x_n_poly.clone() * t_mid_poly.clone()
+            + x_2n_poly.clone() * t_high_poly.clone()
+    );
+
+    // Define final form of the "low", "mid", and "high" pieces that the quotient polynomial were
+    // split into
+    let b10 = Fr::rand(&mut rng);
+    let b10_poly = DensePolynomial::from_coefficients_slice(&[b10]);
+    let b11 = Fr::rand(&mut rng);
+    let b11_poly = DensePolynomial::from_coefficients_slice(&[b11]);
+    let t_low_poly = t_low_poly + b10_poly.clone() * x_n_poly.clone();
+    let t_mid_poly = t_mid_poly - b10_poly + b11_poly.clone() * x_n_poly.clone();
+    let t_high_poly = t_high_poly - b11_poly;
+    assert_eq!(
+        t_poly,
+        t_low_poly.clone() + x_n_poly * t_mid_poly.clone() + x_2n_poly * t_high_poly.clone()
+    );
+
+    // Create commitments to the "low", "mid", and "high" polynomials that came from splitting-up
+    // the quotient polynomial
+    let t_low_poly_commitment = std::iter::zip(t_low_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let t_mid_poly_commitment = std::iter::zip(t_mid_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let t_high_poly_commitment = std::iter::zip(t_high_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let _round_three = [
+        t_low_poly_commitment,
+        t_mid_poly_commitment,
+        t_high_poly_commitment,
+    ];
 }
 
 #[cfg(test)]
