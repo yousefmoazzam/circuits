@@ -280,13 +280,12 @@ fn main() {
     let c_indices_mapping = DensePolynomial::from_coefficients_slice(
         &small_domain.ifft(&domain.iter().map(|elem| k2 * elem).collect::<Vec<_>>()),
     );
-    let f_poly =
-        (gamma_poly.clone() + a_indices_mapping.clone() + a_poly.clone() * beta_poly.clone())
-            * (gamma_poly.clone() + b_indices_mapping.clone() + b_poly.clone() * beta_poly.clone())
-            * (gamma_poly.clone() + c_indices_mapping + c_poly.clone() * beta_poly.clone());
-    let g_poly = (gamma_poly.clone() + sigma_a_poly.clone() + a_poly.clone() * beta_poly.clone())
-        * (gamma_poly.clone() + sigma_b_poly.clone() + b_poly.clone() * beta_poly.clone())
-        * (gamma_poly + sigma_c_poly + c_poly.clone() * beta_poly);
+    let f_poly = (gamma_poly.clone() + a_indices_mapping * beta_poly.clone() + a_poly.clone())
+        * (gamma_poly.clone() + b_indices_mapping * beta_poly.clone() + b_poly.clone())
+        * (gamma_poly.clone() + c_indices_mapping * beta_poly.clone() + c_poly.clone());
+    let g_poly = (gamma_poly.clone() + sigma_a_poly.clone() * beta_poly.clone() + a_poly.clone())
+        * (gamma_poly.clone() + sigma_b_poly.clone() * beta_poly.clone() + b_poly.clone())
+        * (gamma_poly + sigma_c_poly * beta_poly + c_poly.clone());
     let mut acc_evals = vec![Fr::from(1)];
     for (idx, elem) in domain.iter().enumerate() {
         acc_evals.push(acc_evals[idx] * (f_poly.evaluate(elem) / g_poly.evaluate(elem)));
