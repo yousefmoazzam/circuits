@@ -284,9 +284,9 @@ fn main() {
         (gamma_poly.clone() + a_indices_mapping.clone() + a_poly.clone() * beta_poly.clone())
             * (gamma_poly.clone() + b_indices_mapping.clone() + b_poly.clone() * beta_poly.clone())
             * (gamma_poly.clone() + c_indices_mapping + c_poly.clone() * beta_poly.clone());
-    let g_poly = (gamma_poly.clone() + sigma_a_poly.clone() + a_poly * beta_poly.clone())
-        * (gamma_poly.clone() + sigma_b_poly.clone() + b_poly * beta_poly.clone())
-        * (gamma_poly + sigma_c_poly + c_poly * beta_poly);
+    let g_poly = (gamma_poly.clone() + sigma_a_poly.clone() + a_poly.clone() * beta_poly.clone())
+        * (gamma_poly.clone() + sigma_b_poly.clone() + b_poly.clone() * beta_poly.clone())
+        * (gamma_poly + sigma_c_poly + c_poly.clone() * beta_poly);
     let mut acc_evals = vec![Fr::from(1)];
     for (idx, elem) in domain.iter().enumerate() {
         acc_evals.push(acc_evals[idx] * (f_poly.evaluate(elem) / g_poly.evaluate(elem)));
@@ -304,7 +304,7 @@ fn main() {
     // Sanity check that the permutation polynomial has correct start and end points
     assert_eq!(z_poly.evaluate(&domain[0]), Fr::from(1));
     assert_eq!(z_poly.evaluate(&domain[domain.len() - 1]), Fr::from(1));
-    let _z_poly_commitment = std::iter::zip(z_poly.coeffs(), srs_g1)
+    let z_poly_commitment = std::iter::zip(z_poly.coeffs(), srs_g1)
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
@@ -312,7 +312,7 @@ fn main() {
     // Prover: round three
     //
     // Hash polynomial commitments from round one and two
-    (round_one[0] + round_one[1] + _z_poly_commitment + G1Projective::rand(&mut rng))
+    (round_one[0] + round_one[1] + z_poly_commitment + G1Projective::rand(&mut rng))
         .hash(&mut hasher);
     let alpha = hasher.finish();
     let alpha_poly = DensePolynomial::from_coefficients_slice(&[Fr::from(alpha)]);
@@ -338,7 +338,8 @@ fn main() {
     }
 
     // Define the quotient polynomial
-    let t1_poly = (f_poly * z_poly.clone() - g_poly * z_poly_omega_shifted) * alpha_poly.clone();
+    let t1_poly =
+        (f_poly * z_poly.clone() - g_poly * z_poly_omega_shifted.clone()) * alpha_poly.clone();
     assert_eq!(
         t1_poly.divide_by_vanishing_poly(small_domain).1,
         DensePolynomial::from_coefficients_slice(&[Fr::from(0)])
@@ -417,10 +418,40 @@ fn main() {
         .map(|(coeff, term)| term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let _round_three = [
+    let round_three = [
         t_low_poly_commitment,
         t_mid_poly_commitment,
         t_high_poly_commitment,
+    ];
+
+    // Prover phase: round four
+    //
+    // Hash polynomial commitments from rounds one, two, and three
+    (round_one[0]
+        + round_one[1]
+        + round_one[2]
+        + z_poly_commitment
+        + round_three[0]
+        + round_three[1]
+        + round_three[2])
+        .hash(&mut hasher);
+    let zeta = Fr::from(hasher.finish());
+
+    // Evaluate wire polynomials, index-mapping polynomials for wire sets A and B, and
+    // omega-shifted permutation polynomial, at a random field element
+    let a_zeta = a_poly.evaluate(&zeta);
+    let b_zeta = b_poly.evaluate(&zeta);
+    let c_zeta = c_poly.evaluate(&zeta);
+    let sigma_a_zeta = sigma_a_poly.evaluate(&zeta);
+    let sigma_b_zeta = sigma_b_poly.evaluate(&zeta);
+    let z_omega_shifted_zeta = z_poly_omega_shifted.evaluate(&zeta);
+    let _round_four = [
+        a_zeta,
+        b_zeta,
+        c_zeta,
+        sigma_a_zeta,
+        sigma_b_zeta,
+        z_omega_shifted_zeta,
     ];
 }
 
