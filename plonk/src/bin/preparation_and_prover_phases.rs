@@ -1,4 +1,4 @@
-use ark_bn254::{Fr, G1Projective};
+use ark_bn254::{Fq, Fr, G1Projective};
 use ark_ec::PrimeGroup;
 use ark_ff::{Field, UniformRand};
 use ark_poly::{
@@ -261,10 +261,18 @@ fn main() {
     // Hash the polynomial commitments from round one in the context of applying the Fiat-Shamir
     // heuristic to make the KZG polynomial commitment scheme be non-interactive
     let mut hasher = DefaultHasher::new();
-    (round_one[0] + round_one[1] + round_one[2] + G1Projective::rand(&mut rng)).hash(&mut hasher);
+    (round_one[0]
+        + round_one[1]
+        + round_one[2]
+        + G1Projective::new(Fq::from(0), Fq::from(0), Fq::from(0)))
+    .hash(&mut hasher);
     let beta = hasher.finish();
     let beta_poly = DensePolynomial::from_coefficients_slice(&[Fr::from(beta)]);
-    (round_one[0] + round_one[1] + round_one[2] + G1Projective::rand(&mut rng)).hash(&mut hasher);
+    (round_one[0]
+        + round_one[1]
+        + round_one[2]
+        + G1Projective::new(Fq::from(1), Fq::from(1), Fq::from(0)))
+    .hash(&mut hasher);
     let gamma = hasher.finish();
     let gamma_poly = DensePolynomial::from_coefficients_slice(&[Fr::from(gamma)]);
 
