@@ -319,8 +319,7 @@ fn main() {
     // Prover: round three
     //
     // Hash polynomial commitments from round one and two
-    (round_one[0] + round_one[1] + z_poly_commitment + G1Projective::rand(&mut rng))
-        .hash(&mut hasher);
+    (round_one[0] + round_one[1] + z_poly_commitment).hash(&mut hasher);
     let alpha = hasher.finish();
     let alpha_poly = DensePolynomial::from_coefficients_slice(&[Fr::from(alpha)]);
 
