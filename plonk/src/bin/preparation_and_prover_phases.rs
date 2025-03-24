@@ -1,5 +1,5 @@
-use ark_bn254::{Fq, Fr, G1Projective};
-use ark_ec::PrimeGroup;
+use ark_bn254::{Bn254, Fq, Fr, G1Projective, G2Projective};
+use ark_ec::{pairing::Pairing, CurveGroup, PrimeGroup};
 use ark_ff::{Field, UniformRand};
 use ark_poly::{
     univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain,
@@ -7,6 +7,8 @@ use ark_poly::{
 };
 use ark_std::test_rng;
 use std::hash::{DefaultHasher, Hash, Hasher};
+
+const NO_OF_POLY_COEFFS: usize = 8;
 
 /// For the eqn `2x^2 - x^2y^2 + 3 = 25` and a proof of having a solution `x = 2, y = 3`:
 /// - the preparation phase
@@ -16,7 +18,6 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 fn main() {
     let x = 2;
     let y = 3;
-    const NO_OF_POLY_COEFFS: usize = 8;
     let small_domain = GeneralEvaluationDomain::<Fr>::new(NO_OF_POLY_COEFFS).unwrap();
     let domain = small_domain.elements().collect::<Vec<_>>();
 
@@ -485,11 +486,11 @@ fn main() {
     let v = hasher.finish();
 
     // Define "linearisation polynomial"
-    let gate_poly_part = ql_poly * a_zeta
-        + qr_poly * b_zeta
-        + qo_poly * c_zeta
-        + qm_poly * a_zeta * b_zeta
-        + qc_poly;
+    let gate_poly_part = ql_poly.clone() * a_zeta
+        + qr_poly.clone() * b_zeta
+        + qo_poly.clone() * c_zeta
+        + qm_poly.clone() * a_zeta * b_zeta
+        + qc_poly.clone();
 
     let f_poly_part = z_poly.clone()
         * Fr::from(alpha)
@@ -504,7 +505,7 @@ fn main() {
     let g_poly_part =
         ((a_zeta_poly.clone() + beta_poly.clone() * sigma_a_zeta + gamma_poly.clone())
             * (b_zeta_poly.clone() + beta_poly.clone() * sigma_b_zeta + gamma_poly.clone())
-            * (c_zeta_poly.clone() + beta_poly * sigma_c_poly + gamma_poly))
+            * (c_zeta_poly.clone() + beta_poly * sigma_c_poly.clone() + gamma_poly))
             * z_omega_shifted_zeta
             * Fr::from(alpha);
 
@@ -524,9 +525,9 @@ fn main() {
         + (a_poly - a_zeta_poly) * Fr::from(v)
         + (b_poly - b_zeta_poly) * Fr::from(v).pow([2])
         + (c_poly - c_zeta_poly) * Fr::from(v).pow([3])
-        + (sigma_a_poly - DensePolynomial::from_coefficients_slice(&[sigma_a_zeta]))
+        + (sigma_a_poly.clone() - DensePolynomial::from_coefficients_slice(&[sigma_a_zeta]))
             * Fr::from(v).pow([4])
-        + (sigma_b_poly - DensePolynomial::from_coefficients_slice(&[sigma_b_zeta]))
+        + (sigma_b_poly.clone() - DensePolynomial::from_coefficients_slice(&[sigma_b_zeta]))
             * Fr::from(v).pow([5]);
     let w_zeta_poly = w_zeta_poly_dividend.clone() / w_zeta_poly_divisor.clone();
     // Sanity check that `w_zeta_poly` has root at `zeta`
@@ -577,6 +578,257 @@ fn main() {
         + G1Projective::rand(&mut rng))
     .hash(&mut hasher);
     let _u = hasher.finish();
+
+    // Create commitments to selector polynomials and wire permutation polynomials
+    let ql_poly_commitment = std::iter::zip(ql_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let qr_poly_commitment = std::iter::zip(qr_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let qo_poly_commitment = std::iter::zip(qo_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let qm_poly_commitment = std::iter::zip(qm_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let qc_poly_commitment = std::iter::zip(qc_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let sigma_a_poly_commitment = std::iter::zip(sigma_a_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let sigma_b_poly_commitment = std::iter::zip(sigma_b_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+    let sigma_c_poly_commitment = std::iter::zip(sigma_c_poly.coeffs(), srs_g1)
+        .map(|(coeff, term)| term * coeff)
+        .reduce(|acc, val| acc + val)
+        .unwrap();
+
+    verify_proof(
+        round_one,
+        z_poly_commitment,
+        round_three,
+        _round_four,
+        _round_five,
+        [
+            ql_poly_commitment,
+            qr_poly_commitment,
+            qo_poly_commitment,
+            qm_poly_commitment,
+            qc_poly_commitment,
+        ],
+        [
+            sigma_a_poly_commitment,
+            sigma_b_poly_commitment,
+            sigma_c_poly_commitment,
+        ],
+        k1,
+        k2,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_proof(
+    round_one: [G1Projective; 3],
+    round_two: G1Projective,
+    round_three: [G1Projective; 3],
+    round_four: [Fr; 6],
+    round_five: [G1Projective; 2],
+    selector_poly_commitments: [G1Projective; 5],
+    wire_permutation_poly_commitments: [G1Projective; 3],
+    k1: Fr,
+    k2: Fr,
+) {
+    let [a_comm, b_comm, c_comm] = round_one;
+    let z_comm = round_two;
+    let [t_low_comm, t_mid_comm, t_high_comm] = round_three;
+    let [a_zeta, b_zeta, c_zeta, sigma_a_zeta, sigma_b_zeta, z_omega_zeta] = round_four;
+    let [w_zeta_comm, w_omega_zeta_comm] = round_five;
+    let [ql_comm, qr_comm, qo_comm, qm_comm, qc_comm] = selector_poly_commitments;
+    let [sigma_a_comm, sigma_b_comm, sigma_c_comm] = wire_permutation_poly_commitments;
+
+    // Preprocessed input
+    //
+    // Check that selector polynomial commitments and wire permutation commitments are all elements
+    // of the elliptic curve group (which is agreed upon between the prover and verifier
+    // beforehand)
+    assert!(ql_comm.into_affine().is_on_curve());
+    assert!(qr_comm.into_affine().is_on_curve());
+    assert!(qo_comm.into_affine().is_on_curve());
+    assert!(qm_comm.into_affine().is_on_curve());
+    assert!(qc_comm.into_affine().is_on_curve());
+    assert!(sigma_a_comm.into_affine().is_on_curve());
+    assert!(sigma_b_comm.into_affine().is_on_curve());
+    assert!(sigma_c_comm.into_affine().is_on_curve());
+
+    // Step 1
+    //
+    // Check that commitments from rounds one, two, three, and five, are all elements of the
+    // elliptic curve group
+    //
+    // The type of the bindings already imply this, but maybe could have been given group elements
+    // constructed without checking if the associated coords actually were a point on the elliptic
+    // curve, so `is_on_curve()` may have some utility here.
+    assert!(a_comm.into_affine().is_on_curve());
+    assert!(b_comm.into_affine().is_on_curve());
+    assert!(c_comm.into_affine().is_on_curve());
+    assert!(z_comm.into_affine().is_on_curve());
+    assert!(t_low_comm.into_affine().is_on_curve());
+    assert!(t_mid_comm.into_affine().is_on_curve());
+    assert!(t_high_comm.into_affine().is_on_curve());
+    assert!(w_zeta_comm.into_affine().is_on_curve());
+    assert!(w_omega_zeta_comm.into_affine().is_on_curve());
+
+    // Step 2
+    //
+    // Check that the evaluations from round four are elements of the finite field (which is the
+    // scalar field associated with the chosen elliptic curve group)
+    //
+    // TODO: Not sure what to do, the type implies this?
+
+    // Step 3
+    //
+    // Verify 8th roots of unity are in the finite field
+    //
+    // TODO: Same uncertainty as step 2
+
+    // Step 4
+    //
+    // Hash commitments from various rounds to get "random values" used in expressions
+    let mut hasher = DefaultHasher::new();
+    (a_comm + b_comm + c_comm + G1Projective::new(Fq::from(0), Fq::from(0), Fq::from(0)))
+        .hash(&mut hasher);
+    let beta = Fr::from(hasher.finish());
+    (a_comm + b_comm + c_comm + G1Projective::new(Fq::from(1), Fq::from(1), Fq::from(0)))
+        .hash(&mut hasher);
+    let gamma = Fr::from(hasher.finish());
+    (a_comm + b_comm + c_comm + z_comm).hash(&mut hasher);
+    let alpha = Fr::from(hasher.finish());
+    (a_comm + b_comm + c_comm + z_comm + t_low_comm + t_mid_comm + t_high_comm).hash(&mut hasher);
+    let zeta = Fr::from(hasher.finish());
+    (a_comm
+        + b_comm
+        + c_comm
+        + z_comm
+        + t_low_comm
+        + t_mid_comm
+        + t_high_comm
+        + G1Projective::new(Fq::from(4), Fq::from(4), Fq::from(0)))
+    .hash(&mut hasher);
+    let v = Fr::from(hasher.finish());
+    (a_comm
+        + b_comm
+        + c_comm
+        + z_comm
+        + t_low_comm
+        + t_mid_comm
+        + t_high_comm
+        + w_zeta_comm
+        + w_omega_zeta_comm)
+        .hash(&mut hasher);
+    let u = Fr::from(hasher.finish());
+
+    // Step 5
+    //
+    // Evaluate vanishing poylnomial at `zeta`
+    let small_domain = GeneralEvaluationDomain::<Fr>::new(NO_OF_POLY_COEFFS).unwrap();
+    let vanishing_poly_zeta = small_domain.evaluate_vanishing_polynomial(zeta);
+
+    // Step 6
+    //
+    // Evaluate Lagrange poylnomial at `zeta`
+    let mut l1_poly_evals = [Fr::from(0); NO_OF_POLY_COEFFS];
+    l1_poly_evals[0] = Fr::from(1);
+    let l1_poly = DensePolynomial::from_coefficients_slice(&small_domain.ifft(&l1_poly_evals));
+    let l1_poly_zeta = l1_poly.evaluate(&zeta);
+
+    // Step 7
+    //
+    // Evaluate public input polynomial at `zeta`
+    //
+    // TODO: No public inputs for now
+
+    // Step 8
+    //
+    // Compute the constant part of the `r(x)` polynomial
+    let r0 = -l1_poly_zeta * alpha.pow([2])
+        - z_omega_zeta
+            * alpha
+            * (a_zeta + beta * sigma_a_zeta + gamma)
+            * (b_zeta + beta * sigma_b_zeta + gamma)
+            * (c_zeta + gamma);
+
+    // Step 9
+    //
+    // Compute part of batched polynomial commitment involving the `r(x)` polynomial
+    let d_comm_gate_part = qm_comm * a_zeta * b_zeta
+        + ql_comm * a_zeta
+        + qr_comm * b_zeta
+        + qo_comm * c_zeta
+        + qc_comm;
+    let d_comm_f_poly_part = z_comm
+        * ((a_zeta + beta * zeta + gamma)
+            * (b_zeta + beta * k1 * zeta + gamma)
+            * (c_zeta + beta * k2 * zeta + gamma)
+            * alpha
+            + l1_poly_zeta * alpha.pow([2])
+            + u);
+    let d_comm_g_poly_part = sigma_c_comm
+        * (a_zeta + beta * sigma_a_zeta + gamma)
+        * (b_zeta + beta * sigma_b_zeta + gamma)
+        * alpha
+        * beta
+        * z_omega_zeta;
+    let d_comm_quotient_poly_part = (t_low_comm
+        + t_mid_comm * zeta.pow([NO_OF_POLY_COEFFS as u64])
+        + t_high_comm * zeta.pow([2 * NO_OF_POLY_COEFFS as u64]))
+        * vanishing_poly_zeta;
+    let d_comm =
+        d_comm_gate_part + d_comm_f_poly_part - d_comm_g_poly_part - d_comm_quotient_poly_part;
+
+    // Step 10
+    //
+    // Compute rest of the batched polynomial commitment involving powers of `v`
+    let f_comm = d_comm
+        + a_comm * v
+        + b_comm * v.pow([2])
+        + c_comm * v.pow([3])
+        + sigma_a_comm * v.pow([4])
+        + sigma_b_comm * v.pow([5]);
+
+    // Step 11
+    //
+    // Using the generator of the `G1` group, encrypt the batched polynomial evaluations
+    let g1 = G1Projective::generator();
+    let e_comm = g1
+        * (-r0
+            + v * a_zeta
+            + v.pow([2]) * b_zeta
+            + v.pow([3]) * c_zeta
+            + v.pow([4]) * sigma_a_zeta
+            + v.pow([5]) * sigma_b_zeta
+            + u * z_omega_zeta);
+
+    // Step 12
+    //
+    // Check equality of final eqn
+    let domain = small_domain.elements().collect::<Vec<_>>();
+    let g2 = G2Projective::generator();
+    let lhs = Bn254::pairing(w_zeta_comm + w_omega_zeta_comm * u, g2);
+    let rhs = Bn254::pairing(
+        w_zeta_comm * zeta + w_omega_zeta_comm * u * zeta * domain[1] + f_comm - e_comm,
+        g2,
+    );
+    assert_eq!(lhs, rhs);
 }
 
 #[cfg(test)]
