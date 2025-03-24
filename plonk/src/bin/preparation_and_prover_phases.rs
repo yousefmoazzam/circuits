@@ -470,6 +470,9 @@ fn main() {
     // - elements of an elliptic curve group
     //
     // so further investigation is needed.
+    //
+    // For now, use a fixed elliptic curve group element on top of the previous round's
+    // commitments.
     (round_one[0]
         + round_one[1]
         + round_one[2]
@@ -477,7 +480,7 @@ fn main() {
         + round_three[0]
         + round_three[1]
         + round_three[2]
-        + G1Projective::rand(&mut rng))
+        + G1Projective::new(Fq::from(4), Fq::from(4), Fq::from(0)))
     .hash(&mut hasher);
     let v = hasher.finish();
 
