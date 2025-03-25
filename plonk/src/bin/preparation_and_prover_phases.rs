@@ -168,16 +168,9 @@ fn main() {
     let mut rng = test_rng();
     let tau = Fr::rand(&mut rng);
     let g1 = G1Projective::generator();
-    let srs_g1 = [
-        g1,
-        g1 * tau,
-        g1 * tau.pow([2]),
-        g1 * tau.pow([3]),
-        g1 * tau.pow([4]),
-        g1 * tau.pow([5]),
-        g1 * tau.pow([6]),
-        g1 * tau.pow([7]),
-    ];
+    let srs_g1 = (0..NO_OF_POLY_COEFFS + 7)
+        .map(|val| g1 * tau.pow([val as u64]))
+        .collect::<Vec<_>>();
 
     // Prover: round one
     //
@@ -243,16 +236,16 @@ fn main() {
 
     // Create commitments to the wire polynomials (ie, perform the inner-product evaluation between
     // the coefficients of a wire polynomial and the SRS generated in the trusted setup)
-    let a_poly_commitment = std::iter::zip(a_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let a_poly_commitment = std::iter::zip(a_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let b_poly_commitment = std::iter::zip(b_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let b_poly_commitment = std::iter::zip(b_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let c_poly_commitment = std::iter::zip(c_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let c_poly_commitment = std::iter::zip(c_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
     let round_one = [a_poly_commitment, b_poly_commitment, c_poly_commitment];
@@ -312,8 +305,8 @@ fn main() {
     // Sanity check that the permutation polynomial has correct start and end points
     assert_eq!(z_poly.evaluate(&domain[0]), Fr::from(1));
     assert_eq!(z_poly.evaluate(&domain[domain.len() - 1]), Fr::from(1));
-    let z_poly_commitment = std::iter::zip(z_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let z_poly_commitment = std::iter::zip(z_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
 
@@ -409,16 +402,16 @@ fn main() {
 
     // Create commitments to the "low", "mid", and "high" polynomials that came from splitting-up
     // the quotient polynomial
-    let t_low_poly_commitment = std::iter::zip(t_low_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let t_low_poly_commitment = std::iter::zip(t_low_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let t_mid_poly_commitment = std::iter::zip(t_mid_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let t_mid_poly_commitment = std::iter::zip(t_mid_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let t_high_poly_commitment = std::iter::zip(t_high_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let t_high_poly_commitment = std::iter::zip(t_high_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
     let round_three = [
@@ -557,12 +550,12 @@ fn main() {
     );
 
     // Create commitments to the two opening polynomials
-    let w_zeta_poly_commitment = std::iter::zip(w_zeta_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let w_zeta_poly_commitment = std::iter::zip(w_zeta_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let w_omega_zeta_poly_commitment = std::iter::zip(w_omega_zeta_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let w_omega_zeta_poly_commitment = std::iter::zip(w_omega_zeta_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
     let _round_five = [w_zeta_poly_commitment, w_omega_zeta_poly_commitment];
@@ -580,32 +573,32 @@ fn main() {
     let _u = hasher.finish();
 
     // Create commitments to selector polynomials and wire permutation polynomials
-    let ql_poly_commitment = std::iter::zip(ql_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let ql_poly_commitment = std::iter::zip(ql_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let qr_poly_commitment = std::iter::zip(qr_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let qr_poly_commitment = std::iter::zip(qr_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let qo_poly_commitment = std::iter::zip(qo_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let qo_poly_commitment = std::iter::zip(qo_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let qm_poly_commitment = std::iter::zip(qm_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let qm_poly_commitment = std::iter::zip(qm_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let qc_poly_commitment = std::iter::zip(qc_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let qc_poly_commitment = std::iter::zip(qc_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let sigma_a_poly_commitment = std::iter::zip(sigma_a_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let sigma_a_poly_commitment = std::iter::zip(sigma_a_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
-    let sigma_b_poly_commitment = std::iter::zip(sigma_b_poly.coeffs(), srs_g1)
-        .map(|(coeff, term)| term * coeff)
+    let sigma_b_poly_commitment = std::iter::zip(sigma_b_poly.coeffs(), &srs_g1)
+        .map(|(coeff, term)| *term * coeff)
         .reduce(|acc, val| acc + val)
         .unwrap();
     let sigma_c_poly_commitment = std::iter::zip(sigma_c_poly.coeffs(), srs_g1)
