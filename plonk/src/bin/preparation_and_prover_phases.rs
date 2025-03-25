@@ -633,6 +633,7 @@ fn main() {
         ],
         k1,
         k2,
+        G2Projective::generator() * tau,
     )
 }
 
@@ -647,6 +648,7 @@ fn verify_proof(
     wire_permutation_poly_commitments: [G1Projective; 3],
     k1: Fr,
     k2: Fr,
+    tau_g2: G2Projective,
 ) {
     let [a_comm, b_comm, c_comm] = round_one;
     let z_comm = round_two;
@@ -823,7 +825,7 @@ fn verify_proof(
     // Check equality of final eqn
     let domain = small_domain.elements().collect::<Vec<_>>();
     let g2 = G2Projective::generator();
-    let lhs = Bn254::pairing(w_zeta_comm + w_omega_zeta_comm * u, g2);
+    let lhs = Bn254::pairing(w_zeta_comm + w_omega_zeta_comm * u, tau_g2);
     let rhs = Bn254::pairing(
         w_zeta_comm * zeta + w_omega_zeta_comm * u * zeta * domain[1] + f_comm - e_comm,
         g2,
