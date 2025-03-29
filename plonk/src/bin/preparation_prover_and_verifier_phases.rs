@@ -10,11 +10,8 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 const NO_OF_POLY_COEFFS: usize = 8;
 
-/// For the eqn `2x^2 - x^2y^2 + 3 = 25` and a proof of having a solution `x = 2, y = 3`:
-/// - the preparation phase
-/// - round one of the prover phase
-///
-/// using the PLONK protocol.
+/// Zero-knowledge proof of having a solution to the eqn `2x^2 - x^2y^2 + 3 = 25` using the PLONK
+/// protocol.
 fn main() {
     let x = 2;
     let y = 3;
