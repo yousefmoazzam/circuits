@@ -1,6 +1,6 @@
 use ark_bn254::{Fr, G1Projective};
 use ark_ff::Field;
-use ark_std::{test_rng, UniformRand};
+use ark_std::{rand::Rng, test_rng, UniformRand};
 
 /// Zero-knowledge interactive proof of two vectors `a` and `b` and their inner product that scales
 /// logarithmically with the length of the vectors
@@ -90,7 +90,7 @@ fn main() {
     let t_quadratic_comm = q_curve_point * t_quadratic + b_curve_point * tau_2;
 
     // Verifier sends random `u` value for evaluation of `l`, `r`, and `t` polynomials
-    let u = Fr::rand(&mut rng);
+    let u = send_random_field_element(&mut rng);
 
     // Prover evaluates vector polynomials `l` and `r`, and scalar polynomial `t`
     let l_eval = evaluate_vector_polynomial(
@@ -163,7 +163,7 @@ fn main() {
     // - the folding of the vector `r_eval` and the value `u_1_inv`
     // - the folding of the vector of elliptic curve group elements `g` and the value `u_1_inv`
     // - the folding of the vector of elliptic curve group elements `h` and the value `u_1`
-    let u_1 = Fr::rand(&mut rng);
+    let u_1 = send_random_field_element(&mut rng);
     let u_1_inv = u_1.inverse().unwrap();
     let l_eval_prime = [
         l_eval[0] * u_1 + l_eval[1] * u_1_inv,
@@ -206,7 +206,7 @@ fn main() {
 
     // Apply fold operation once more, now to `l_eval_prime`, `r_eval_prime`, `g_prime`, and
     // `h_prime`
-    let u_2 = Fr::rand(&mut rng);
+    let u_2 = send_random_field_element(&mut rng);
     let u_2_inv = u_2.inverse().unwrap();
     let l_eval_double_prime = [l_eval_prime[0] * u_2 + l_eval_prime[1] * u_2_inv];
     let r_eval_double_prime = [r_eval_prime[0] * u_2_inv + r_eval_prime[1] * u_2];
@@ -262,6 +262,11 @@ fn main() {
         t_constant_comm + t_linear_comm * u + t_quadratic_comm * u.pow([2])
             - b_curve_point * t_eval_proof
     );
+}
+
+/// Verifier sends prover a random field element
+fn send_random_field_element(rng: &mut impl Rng) -> Fr {
+    Fr::rand(rng)
 }
 
 fn evaluate_scalar_polynomial(constant: Fr, linear: Fr, quadratic: Fr, u: Fr) -> Fr {
