@@ -49,6 +49,8 @@ as the three-colouring problem for the Australian territories
 
 - `bulletproofs/src/bin/chapter_11.rs` is a binary crate implementing a linearly scaling
 zero-knowledge range proof using the Bulletproofs protocol
+- `bulletproofs/src/bin/chapter_11_logarithmic.rs` is a binary crate implementing a
+logarithmically scaling zero-knowledge range proof using the Bulletproofs protocol
 - `plonk/src/bin/preparation_prover_and_verifier_phases.rs` is a binary crate implementing a
 zero-knowledge proof of a solution to a simple equation using the PlonK protocol and the KZG
 polynomial commitment scheme, with non-interactivity via application of the Fiat-Shamir
